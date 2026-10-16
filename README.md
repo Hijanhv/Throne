@@ -2,6 +2,10 @@
 
 Write a strategy. Watch it trade.
 
+**Live app: [throne-flax.vercel.app](https://throne-flax.vercel.app)**
+
+The deployed dashboard talks to a Throne backend on your own machine (`http://localhost:8000`). Run `./start.sh`, open the link in Chrome and click **Allow** when it asks to access your local network. See [Deploying](#deploying) for details.
+
 Throne turns a trading strategy written in plain English into deterministic JSON rules, backtests those rules on historical NSE data, and runs them live (paper or real money through Dhan). You never write code.
 
 ```
