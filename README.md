@@ -135,8 +135,9 @@ API docs are at http://localhost:8000/docs.
 ### Tests and checks
 
 ```bash
-cd backend && .venv/bin/python -m pytest       # 38 tests: parser, backtester, executor, API
-cd frontend && npm run typecheck && npm run lint
+cd backend && .venv/bin/python -m pip install -r requirements-dev.txt   # once, adds pytest and ruff
+.venv/bin/python -m pytest                      # 38 tests: parser, backtester, executor, API
+cd ../frontend && npm run typecheck && npm run lint
 ```
 
 ### Troubleshooting
