@@ -49,6 +49,8 @@ async def parse_strategy(text: str, symbol: str | None = None, timeframe: Timefr
     try:
         raw = await _call_ollama(text)
         ai_rules, ai_sl, ai_tp, ai_reason = _validate_ai_output(raw, text)
+        if ai_rules and not _agrees_with_regex(ai_rules, regex.rules):
+            ai_rules, ai_reason = [], "AI read a condition differently from the deterministic parser, used regex parser"
     except (httpx.HTTPError, OSError) as exc:
         ai_reason = f"Ollama unreachable ({type(exc).__name__}), used regex parser"
     except Exception as exc:  # never let the LLM path crash a request
@@ -186,6 +188,7 @@ def _validate_ai_output(raw: str, text: str) -> tuple[list[StrategyRule], float 
     for item in items:
         if not isinstance(item, dict):
             return [], None, None, "AI JSON rule was not an object, used regex parser"
+        item = _tidy_ai_rule(item)
         try:
             rule = StrategyRule.model_validate(item)
         except ValidationError:
@@ -226,6 +229,32 @@ def _direction_ok(rule: StrategyRule, lowered: str) -> bool:
         if last_wanted > last_opposite:
             return True
     return False
+
+
+_VALID_INDICATORS = {i.value for i in Indicator}
+
+
+def _tidy_ai_rule(item: dict[str, object]) -> dict[str, object]:
+    """Drops fields small models fill with junk. Risk levels are taken from the strategy level fields."""
+    out = {k: v for k, v in item.items() if k not in ("stop_loss_pct", "take_profit_pct")}
+    target = out.get("compare_to")
+    if isinstance(target, str) and target.strip().upper() not in _VALID_INDICATORS:
+        target = None
+    if target is None or target == "":
+        out.pop("compare_to", None)
+        out.pop("compare_period", None)
+    return out
+
+
+def _agrees_with_regex(ai_rules: list[StrategyRule], regex_rules: list[StrategyRule]) -> bool:
+    """Where both parsers read the same condition, they must agree on the operator."""
+    for a in ai_rules:
+        for r in regex_rules:
+            same_target = (a.compare_to, a.compare_period, a.value) == (r.compare_to, r.compare_period, r.value)
+            if a.indicator == r.indicator and a.period == r.period and a.action == r.action and same_target:
+                if a.operator != r.operator:
+                    return False
+    return True
 
 
 def _mentioned(ind: Indicator, lowered: str) -> bool:

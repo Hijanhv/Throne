@@ -68,6 +68,8 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    # lets a deployed https frontend call a backend on localhost under Chrome's private network rules
+    allow_private_network=True,
 )
 
 

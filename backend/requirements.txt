@@ -1,4 +1,4 @@
-fastapi>=0.115
+fastapi>=0.140  # needs Starlette with allow_private_network
 uvicorn[standard]>=0.30
 pydantic>=2.7
 python-dotenv>=1.0

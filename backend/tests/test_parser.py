@@ -138,3 +138,37 @@ async def test_ai_used_when_it_matches(monkeypatch):
     monkeypatch.setattr(p, "_call_ollama", fake)
     s = await p.parse_strategy(TEXT)
     assert s.parser == "ai" and s.confidence == 1.0
+
+
+def test_ai_junk_compare_to_is_dropped():
+    raw = _ai(
+        [
+            {
+                "indicator": "RSI",
+                "operator": "CROSSES_BELOW",
+                "value": 35,
+                "compare_to": "65",
+                "action": "BUY",
+                "stop_loss_pct": 7,
+            },
+            {"indicator": "RSI", "operator": "GREATER_THAN", "value": 65, "compare_to": "70 RSI", "action": "SELL"},
+        ]
+    )
+    rules, _, _, reason = p._validate_ai_output(raw, TEXT)
+    assert reason is None and all(r.compare_to is None and r.stop_loss_pct is None for r in rules)
+
+
+async def test_ai_disagreeing_with_regex_is_rejected(monkeypatch):
+    async def fake(_text):
+        # "is below 30" means LESS_THAN, not a cross
+        return _ai(
+            [
+                {"indicator": "RSI", "operator": "CROSSES_BELOW", "value": 30, "action": "BUY"},
+                {"indicator": "RSI", "operator": "GREATER_THAN", "value": 70, "action": "SELL"},
+            ]
+        )
+
+    monkeypatch.setattr(p, "_call_ollama", fake)
+    s = await p.parse_strategy("Buy when RSI is below 30. Sell when RSI is above 70.")
+    assert s.parser == "regex" and "differently" in s.warnings[0]
+    assert s.rules[0].operator == Operator.LESS_THAN

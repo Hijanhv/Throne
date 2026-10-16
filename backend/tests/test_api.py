@@ -59,3 +59,17 @@ def test_validation_errors(client):
     assert client.post("/parse", json={"text": ""}).status_code == 422
     assert client.post("/backtest", json={"strategy_id": "nope"}).status_code == 404
     assert client.post("/deploy", json={"strategy_id": "x", "mode": "paper", "capital": -5}).status_code == 422
+
+
+def test_private_network_preflight(client):
+    r = client.options(
+        "/health",
+        headers={
+            "Origin": "https://throne.vercel.app",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Private-Network": "true",
+        },
+    )
+    assert r.status_code == 200
+    assert r.headers["access-control-allow-private-network"] == "true"
+    assert r.headers["access-control-allow-origin"] == "*"

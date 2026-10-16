@@ -57,15 +57,17 @@ Throne turns a trading strategy written in plain English into deterministic JSON
 - every indicator it names must appear in your text
 - every number it uses must appear in your text
 - the direction must match your wording ("below 30" cannot become `CROSSES_ABOVE 30`)
+- where it reads the same condition as the regex parser, the operator must match ("is below" is `LESS_THAN`, not a cross)
 - it must find at least as many conditions as the regex parser did
 
-If any check fails, or Ollama is offline, the regex parser's result is used and the reason shows up in the UI. The badge says **AI** or **REGEX FALLBACK** with a confidence score. For regex, the score is the share of your clauses it understood, and anything it skipped is listed as "Could not understand: ...". In testing, tinyllama often flipped "below" into "above" and copied numbers from its prompt. The checks catch that, so expect the regex parser to handle most strategies.
+If any check fails, or Ollama is offline, the regex parser's result is used and the reason shows up in the UI. The badge says **AI** or **REGEX FALLBACK** with a confidence score. For regex, the score is the share of your clauses it understood, and anything it skipped is listed as "Could not understand: ...". In testing, tinyllama often flipped "below" into "above" and copied numbers from its prompt, and none of its answers passed. `qwen2.5:1.5b` (about 1 GB) does better: it got crossover strategies right and was rejected only for real mistakes, such as treating the MACD signal period 9 as a threshold. Expect the regex parser to handle most strategies either way.
 
 **Backtester.** Indicators (RSI, MACD 12/26/9, EMA, SMA, Bollinger 20/2, volume vs 20 bar average) and the signal column (+1 buy, -1 sell, 0 hold) are computed vectorized over the full series. Execution rules:
 
 - A signal on bar *t*'s close fills at bar *t+1*'s open, so there is no lookahead.
 - Stop loss and take profit are checked intrabar against the low and high. A gap through the level fills at the open. If both levels sit inside one bar, the stop is assumed to hit first.
 - Long only, fully invested, compounding, 5 bps fee per side.
+- Extra history is downloaded before the window so slow indicators (SMA 200, MACD) are ready on the first bar. A 1 year test of "price above 200 SMA" trades the whole year.
 - Sharpe uses per-bar returns annualized by `sqrt(252 x bars per day)`. Max drawdown is peak to trough of the equity curve.
 - The curve starts at 100 and the stats include a buy-and-hold benchmark.
 
@@ -90,7 +92,7 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 uvicorn main:app --reload --port 8000
-pytest                        # 34 tests: parser, backtester, executor, API
+pytest                        # 38 tests: parser, backtester, executor, API
 
 # frontend
 cd frontend
@@ -108,7 +110,7 @@ ollama serve                  # listens on http://localhost:11434
 ollama pull tinyllama
 ```
 
-The top bar shows `OLLAMA: ONLINE` once the backend can reach it. Any model works, for example `OLLAMA_MODEL=llama3.2:3b`. Larger models pass the sanity checks far more often than tinyllama does. Everything still works with Ollama switched off.
+The top bar shows `OLLAMA: ONLINE` once the backend can reach it. Any model works: `ollama pull qwen2.5:1.5b` and set `OLLAMA_MODEL=qwen2.5:1.5b` for better JSON than tinyllama at a similar speed (1 to 3 seconds per parse on a laptop). Everything still works with Ollama switched off.
 
 ### Dhan API credentials (live mode only)
 
@@ -137,7 +139,9 @@ Things to know:
 
 - A hosted backend cannot reach the Ollama on your laptop, so it uses the regex parser. That is fine, since it is the same rule format.
 - Strategies and executors live in memory. A restart or redeploy clears them, and free tiers that sleep will pause running executors.
-- To use a Vercel frontend with a backend on your own machine, set `NEXT_PUBLIC_API_URL=http://localhost:8000`. Chrome will ask permission for the public site to reach your local network. A tunnel (`cloudflared tunnel --url http://localhost:8000`) avoids that prompt.
+- To use a Vercel frontend with a backend on your own machine, set `NEXT_PUBLIC_API_URL=http://localhost:8000`. Chrome will ask permission for the public site to reach your local network; click Allow. The API sends `Access-Control-Allow-Private-Network` so the request passes. A tunnel (`cloudflared tunnel --url http://localhost:8000`) avoids the prompt.
+
+The current deployment is at **https://throne-flax.vercel.app** and talks to `http://localhost:8000`, so run `./start.sh` (or just the backend) on your machine and open it in Chrome.
 
 ## What you can write
 
