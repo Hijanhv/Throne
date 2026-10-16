@@ -2,9 +2,7 @@
 
 Write a strategy. Watch it trade.
 
-**Live app: [throne-flax.vercel.app](https://throne-flax.vercel.app)**
-
-The deployed dashboard talks to a Throne backend on your own machine (`http://localhost:8000`). Run `./start.sh`, open the link in Chrome and click **Allow** when it asks to access your local network. See [Deploying](#deploying) for details.
+Throne runs entirely on your own machine: the dashboard, the API and the local LLM. See [Run it locally](#run-it-locally) to start it in two commands.
 
 Throne turns a trading strategy written in plain English into deterministic JSON rules, backtests those rules on historical NSE data, and runs them live (paper or real money through Dhan). You never write code.
 
@@ -23,7 +21,7 @@ Throne turns a trading strategy written in plain English into deterministic JSON
 ```
  ┌──────────────────────────┐
  │  Next.js 14 dashboard     │   StrategyInput -> RuleViewer -> Backtest | Live
- │  (Vercel)                 │
+ │  localhost:3000           │
  └────────────┬─────────────┘
               │ axios, NEXT_PUBLIC_API_URL
               ▼
@@ -77,34 +75,79 @@ If any check fails, or Ollama is offline, the regex parser's result is used and 
 
 **Executor.** Every 60 seconds it pulls recent candles and computes signals with the same function the backtester uses, so live and backtest logic cannot drift. It decides on the last *completed* bar, which mirrors the backtest's close-then-next-open rule. Stops and targets are checked on every tick against the latest price. Paper mode never calls the broker. In live mode, a rejected order puts the executor into `error` and stops it, so it never keeps trading blind.
 
-## Setup
+## Run it locally
 
-Requirements: Python 3.11+, Node 18.17+, and optionally [Ollama](https://ollama.com).
+You need **Python 3.11+**, **Node 18.17+** and **git**. [Ollama](https://ollama.com) is optional; without it Throne uses its offline parser.
+
+**1. Get the code**
 
 ```bash
 git clone https://github.com/Hijanhv/Throne.git
 cd Throne
-cp .env.example .env          # fill in Dhan keys only if you want LIVE mode
-./start.sh                    # API on :8000, dashboard on :3000
 ```
 
-Or run each side yourself:
+**2. (Optional) start the local LLM** in a separate terminal
 
 ```bash
-# backend
-cd backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-uvicorn main:app --reload --port 8000
-pytest                        # 38 tests: parser, backtester, executor, API
-
-# frontend
-cd frontend
-npm install
-npm run dev                   # also: npm run typecheck, npm run lint, npm run format
+ollama serve                  # skip if the Ollama app is already running
+ollama pull tinyllama         # one time download, about 640 MB
 ```
 
-API docs are served at http://localhost:8000/docs.
+**3. Start Throne**
+
+```bash
+./start.sh
+```
+
+The first run creates `.env` from `.env.example`, sets up a Python virtual environment, and installs the backend and frontend dependencies, which takes a few minutes. Later runs start in seconds. When you see
+
+```
+Backend:  http://localhost:8000  (docs at /docs)
+Frontend: http://localhost:3000
+```
+
+**4. Open http://localhost:3000** in your browser. The top bar shows `OLLAMA: ONLINE` if the LLM is reachable.
+
+**5. Try it:** click an example chip (for example *RSI mean reversion*), press **PARSE STRATEGY**, then **BACKTEST**. Open the **LIVE** tab and press **DEPLOY PAPER** to watch the paper executor.
+
+**6. Stop** with `Ctrl+C` in the terminal running `start.sh`. This shuts down both servers.
+
+### Running the two halves by hand
+
+If `start.sh` does not suit your setup (for example on Windows without a bash shell), use two terminals:
+
+```bash
+# terminal 1: backend
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+uvicorn main:app --reload --port 8000
+
+# terminal 2: frontend
+cd frontend
+npm install
+npm run dev
+```
+
+API docs are at http://localhost:8000/docs.
+
+### Tests and checks
+
+```bash
+cd backend && .venv/bin/python -m pytest       # 38 tests: parser, backtester, executor, API
+cd frontend && npm run typecheck && npm run lint
+```
+
+### Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| `API OFFLINE` in the top bar | The backend is not running. Check the `start.sh` terminal for errors. |
+| `Ollama: offline` | Run `ollama serve`. Throne still works, using the regex parser. |
+| `address already in use` on 8000 or 3000 | Something else is using the port: `lsof -ti :8000 \| xargs kill` (same for 3000). |
+| `No data from yfinance` | Check the symbol. NSE stocks need no suffix (`TCS`), indices are `NIFTY50`, `BANKNIFTY`, `SENSEX`. Yahoo also rate limits; wait a minute and retry. |
+| `./start.sh: Permission denied` | `chmod +x start.sh` |
 
 ### Ollama
 
@@ -125,27 +168,6 @@ The top bar shows `OLLAMA: ONLINE` once the backend can reach it. Any model work
 5. In the LIVE tab, flip the toggle, enter the security ID and tick the confirmation box. The API refuses live deploys without credentials, a security ID, and `confirm_live: true`.
 
 Access tokens expire. If live orders start failing with an auth error, generate a new token.
-
-## Deploying
-
-### Frontend on Vercel
-
-1. Import the repo in Vercel and set **Root Directory** to `frontend`. Vercel detects Next.js.
-2. Add the env var `NEXT_PUBLIC_API_URL` pointing at your backend, for example `https://throne-api.onrender.com`.
-3. Deploy. To change the backend later, update the env var and redeploy, because `NEXT_PUBLIC_*` values are baked in at build time.
-
-### Backend on Render or Railway
-
-- **Render:** `render.yaml` is included. Create a Blueprint from the repo, then fill in `DHAN_CLIENT_ID`, `DHAN_ACCESS_TOKEN`, and `CORS_ORIGINS=https://your-app.vercel.app`.
-- **Railway:** create a service with root directory `backend`. The `Procfile` starts uvicorn on `$PORT`. Add the same env vars.
-
-Things to know:
-
-- A hosted backend cannot reach the Ollama on your laptop, so it uses the regex parser. That is fine, since it is the same rule format.
-- Strategies and executors live in memory. A restart or redeploy clears them, and free tiers that sleep will pause running executors.
-- To use a Vercel frontend with a backend on your own machine, set `NEXT_PUBLIC_API_URL=http://localhost:8000`. Chrome will ask permission for the public site to reach your local network; click Allow. The API sends `Access-Control-Allow-Private-Network` so the request passes. A tunnel (`cloudflared tunnel --url http://localhost:8000`) avoids the prompt.
-
-The current deployment is at **https://throne-flax.vercel.app** and talks to `http://localhost:8000`, so run `./start.sh` (or just the backend) on your machine and open it in Chrome.
 
 ## What you can write
 
