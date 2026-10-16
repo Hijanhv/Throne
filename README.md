@@ -136,7 +136,7 @@ API docs are at http://localhost:8000/docs.
 
 ```bash
 cd backend && .venv/bin/python -m pip install -r requirements-dev.txt   # once, adds pytest and ruff
-.venv/bin/python -m pytest                      # 38 tests: parser, backtester, executor, API
+.venv/bin/python -m pytest                      # 48 tests: parser, backtester, executor, API, Dhan
 cd ../frontend && npm run typecheck && npm run lint
 ```
 
@@ -168,7 +168,17 @@ The top bar shows `OLLAMA: ONLINE` once the backend can reach it. Any model work
 4. Dhan identifies instruments by **security ID**, not ticker. Look one up in the scrip master at `https://images.dhan.co/api-data/api-scrip-master.csv` (NSE equity examples: RELIANCE `2885`, HDFCBANK `1333`, INFY `1594`, NIFTYBEES `10576`). Indices like NIFTY 50 cannot be bought directly, so to trade a NIFTY signal live, backtest on `NIFTY50` and deploy with an ETF such as NIFTYBEES.
 5. In the LIVE tab, flip the toggle, enter the security ID and tick the confirmation box. The API refuses live deploys without credentials, a security ID, and `confirm_live: true`.
 
-Access tokens expire. If live orders start failing with an auth error, generate a new token.
+Access tokens expire. If live orders start failing with `DH-901`, generate a new token.
+
+For daily (`1d`) strategies Throne buys with product type `CNC` (delivery). Selling delivery shares on a later day needs DDPI or a TPIN authorisation on your Dhan account; without it Dhan rejects the sell. Intraday strategies use `INTRADAY` and square off the same day.
+
+### Testing live mode without real money
+
+Three layers, from cheapest to closest to production:
+
+1. **Mock broker tests (no account).** `tests/test_dhan_integration.py` starts a local server that imitates the Dhan v2 order API and runs the real `dhanhq` SDK and executor against it. It checks the exact order payload and headers, fills booked at Dhan's `averageTradedPrice`, rejected orders (`orderStatus: REJECTED` arrives with HTTP 200, so Throne checks the body), expired tokens (`DH-901`), orders still pending, an unreachable broker, and a hung broker (calls time out after 20 s, `DHAN_HTTP_TIMEOUT`). Any of these failures stops the executor and shows the reason in the LIVE panel.
+2. **Dhan sandbox (free, virtual money).** Sign up at [developer.dhanhq.co](https://developer.dhanhq.co) (no trading account needed), copy the sandbox Client ID and Access Token into `.env`, and add `DHAN_API_BASE_URL=https://sandbox.dhan.co/v2`. The LIVE panel then shows **SANDBOX · VIRTUAL MONEY** instead of **REAL MONEY**. The sandbox fills every order at a fixed price and resets its funds daily, so it tests the order flow, not P&L. Its error responses can take 15 to 60 seconds to reach Python clients; the production API answers in well under a second.
+3. **Real account.** Remove `DHAN_API_BASE_URL`, use your real keys, and start with one share.
 
 ## What you can write
 
@@ -219,7 +229,6 @@ Buy NIFTY when RSI(14) crosses below 30 and volume spikes 2x.
 
 - Futures support (`NSE_FNO`) with expiry handling. SEBI is consulting on settling expiring F&O at the VWAP of the last 30 minutes instead of the closing auction price. A futures backtest would need to settle at that price, and the executor would need an option to square off before the final 30 minutes on expiry day.
 - Persistent storage for strategies and executor state.
-- Order fill reconciliation from Dhan's order book. Live fills are currently marked at the last traded price.
 - Short selling and position sizing rules.
 
 ## Disclaimer

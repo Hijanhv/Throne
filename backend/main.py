@@ -85,6 +85,7 @@ class HealthResponse(BaseModel):
     ollama: bool
     ollama_model: str
     dhan_configured: bool
+    dhan_sandbox: bool
     strategies: int
     running: int
 
@@ -96,6 +97,7 @@ async def health() -> HealthResponse:
         ollama=await ollama_online(),
         ollama_model=ollama_model(),
         dhan_configured=dhan.configured,
+        dhan_sandbox=dhan.is_sandbox,
         strategies=len(store),
         running=sum(1 for e in store.values() if e.executor and e.executor.running),
     )

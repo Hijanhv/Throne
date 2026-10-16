@@ -123,7 +123,14 @@ export function LivePanel({ strategy, health, liveId, setLiveId }: Props) {
               <Switch checked={live} onCheckedChange={setLive} aria-label="Toggle live mode" />
               <span className={live ? "text-warn" : "text-muted"}>LIVE</span>
             </span>
-            {live && !health?.dhan_configured && <Badge tone="danger">Dhan keys missing</Badge>}
+            {live &&
+              (!health?.dhan_configured ? (
+                <Badge tone="danger">Dhan keys missing</Badge>
+              ) : health.dhan_sandbox ? (
+                <Badge tone="accent">Sandbox · virtual money</Badge>
+              ) : (
+                <Badge tone="danger">Real money</Badge>
+              ))}
           </div>
 
           {live && (
@@ -158,7 +165,9 @@ export function LivePanel({ strategy, health, liveId, setLiveId }: Props) {
                   onChange={(e) => setConfirmed(e.target.checked)}
                   className="mt-0.5 accent-[#ff9f1a]"
                 />
-                I understand this sends real market orders to my Dhan account.
+                {health?.dhan_sandbox
+                  ? "I understand this sends orders to the Dhan sandbox (no real money)."
+                  : "I understand this sends real market orders to my Dhan account."}
               </label>
             </div>
           )}

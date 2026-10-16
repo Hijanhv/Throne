@@ -12,7 +12,10 @@ class FakeDhan:
 
     def place_order(self, *args):
         self.orders.append(args)
-        return {"orderId": f"ord-{len(self.orders)}"}
+        return {"orderId": f"ord-{len(self.orders)}", "orderStatus": "TRANSIT"}
+
+    def confirm_fill(self, order_id):
+        return "TRADED", 0.0, 0
 
 
 class Feed:

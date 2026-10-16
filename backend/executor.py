@@ -183,12 +183,19 @@ class StrategyExecutor:
                     0,
                     f"throne-{self.strategy.id[:8]}",
                 )
-                order_id = str(resp.get("orderId") or resp.get("order_id") or "") or None
+                order_id = str(resp["orderId"])
+                status, avg_price, filled = await asyncio.to_thread(self.dhan.confirm_fill, order_id)
             except Exception as exc:  # DhanError, network errors, SDK errors
-                self._fail(f"order rejected: {exc}")
+                self._fail(f"order not confirmed: {exc}. Check the Dhan order book before deploying again")
                 return
+            if status == "TRADED":
+                price = avg_price or price
+                qty = filled or qty
+            else:
+                # still working at the exchange; book it at the last price and say so
+                reason = f"{reason}, {status.lower()} at broker"
 
-        # paper fills, and live fills before the broker confirms, are marked at the last price
+        # paper fills, and unconfirmed live fills, are marked at the last price
         if side == Action.BUY:
             self.position_qty = qty
             self.entry_price = price

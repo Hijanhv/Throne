@@ -106,6 +106,7 @@ export interface Health {
   ollama: boolean;
   ollama_model: string;
   dhan_configured: boolean;
+  dhan_sandbox: boolean;
   strategies: number;
   running: number;
 }
