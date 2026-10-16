@@ -26,7 +26,7 @@ class MockDhan:
 
     def __init__(self):
         self.requests: list[dict] = []
-        self.mode = "fill"  # fill | reject | pending | auth_error | hang
+        self.mode = "fill"  # fill | partial | reject | pending | auth_error | hang
         self.fill_price = 1234.5
         self.orders: dict[str, dict] = {}
 
@@ -65,7 +65,7 @@ def make_server(state: MockDhan) -> ThreadingHTTPServer:
             if not self._auth_ok():
                 return
             order_id = str(len(state.orders) + 1)
-            status = {"fill": "TRANSIT", "pending": "PENDING", "reject": "REJECTED"}[state.mode]
+            status = {"fill": "TRANSIT", "partial": "TRANSIT", "pending": "PENDING", "reject": "REJECTED"}[state.mode]
             order = {"orderId": order_id, "orderStatus": status}
             if state.mode == "reject":
                 order["omsErrorDescription"] = "RMS:Margin Exceeds"
@@ -87,6 +87,13 @@ def make_server(state: MockDhan) -> ThreadingHTTPServer:
                         "orderStatus": "TRADED",
                         "averageTradedPrice": state.fill_price,
                         "filledQty": order["quantity"],
+                    }
+                elif state.mode == "partial":
+                    order = {
+                        **order,
+                        "orderStatus": "PART_TRADED",
+                        "averageTradedPrice": state.fill_price,
+                        "filledQty": order["quantity"] // 2,
                     }
                 self._reply(200, order)
             elif self.path == "/v2/positions":
@@ -260,3 +267,28 @@ async def test_hung_broker_times_out_and_stops(dhan, frame, monkeypatch):
     assert time.monotonic() - started < 2.5
     assert st.status == "error" and "Check the Dhan order book" in st.last_error
     assert st.fills == [] and st.position_qty == 0
+
+
+async def test_partial_fill_books_only_filled_quantity(dhan, frame):
+    client, state = dhan
+    state.mode = "partial"
+    ex = executor(frame, client, [100, 102, 106, 108, 109])
+    for _ in range(2):
+        await ex.tick()
+    st = await ex.get_status()
+    ordered = state.requests[0]["body"]["quantity"]
+    assert st.position_qty == ordered // 2 and st.entry_price == 1234.5
+    assert "partly filled" in st.fills[0].reason
+
+
+async def test_partial_sell_keeps_remaining_shares(dhan, frame):
+    client, state = dhan
+    ex = executor(frame, client, [100, 102, 106, 108, 109, 99, 97, 96])
+    for _ in range(2):  # buy fills completely
+        await ex.tick()
+    bought = (await ex.get_status()).position_qty
+    state.mode = "partial"
+    for _ in range(4):  # exit signal, only half of the sell fills
+        await ex.tick()
+    st = await ex.get_status()
+    assert st.position_qty == bought - bought // 2 and st.entry_price == 1234.5

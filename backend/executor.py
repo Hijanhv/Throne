@@ -188,9 +188,12 @@ class StrategyExecutor:
             except Exception as exc:  # DhanError, network errors, SDK errors
                 self._fail(f"order not confirmed: {exc}. Check the Dhan order book before deploying again")
                 return
-            if status == "TRADED":
+            if status == "TRADED" or (status == "PART_TRADED" and filled):
+                # book what actually executed; on a partial fill the rest is still working at Dhan
                 price = avg_price or price
                 qty = filled or qty
+                if status == "PART_TRADED":
+                    reason = f"{reason}, partly filled, rest still open at broker"
             else:
                 # still working at the exchange; book it at the last price and say so
                 reason = f"{reason}, {status.lower()} at broker"
@@ -202,8 +205,10 @@ class StrategyExecutor:
         else:
             assert self.entry_price is not None
             self.realized_pnl += (price - self.entry_price) * qty
-            self.position_qty = 0
-            self.entry_price = None
+            self.position_qty -= qty  # a partial sell leaves the rest open
+            if self.position_qty <= 0:
+                self.position_qty = 0
+                self.entry_price = None
         self.fills.append(
             Fill(
                 time=datetime.now(UTC), side=side, price=round(price, 2), quantity=qty, reason=reason, order_id=order_id
