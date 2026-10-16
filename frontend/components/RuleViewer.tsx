@@ -14,6 +14,7 @@ import { describeRule } from "@/lib/utils";
 
 interface Props {
   strategy: ParsedStrategy | null;
+  parsing: boolean;
   onBacktest: (r: BacktestResult) => void;
   onBacktestStart: () => void;
   onBacktestEnd: () => void;
@@ -48,7 +49,7 @@ function RuleGroup({ title, logic, rules }: { title: string; logic: "all" | "any
   );
 }
 
-export function RuleViewer({ strategy, onBacktest, onBacktestStart, onBacktestEnd }: Props) {
+export function RuleViewer({ strategy, parsing, onBacktest, onBacktestStart, onBacktestEnd }: Props) {
   const [period, setPeriod] = useState<Period>("1y");
   const [capital, setCapital] = useState("100000");
   const [loading, setLoading] = useState(false);
@@ -169,7 +170,7 @@ export function RuleViewer({ strategy, onBacktest, onBacktestStart, onBacktestEn
               variant="outline"
               className="w-full"
               onClick={() => void run()}
-              disabled={loading || strategy.rules.length === 0}
+              disabled={loading || parsing || strategy.rules.length === 0}
             >
               {loading ? (
                 <>

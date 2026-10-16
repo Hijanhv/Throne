@@ -107,3 +107,27 @@ def test_simulate_signal_on_last_bar_is_ignored(frame):
     df = frame([100, 101, 102])
     sim = simulate(df, np.array([0, 0, 1]), None, None, 0, 100_000, "1d")
     assert sim.trades == []
+
+
+def test_warmup_history_is_used_but_not_traded(frame, monkeypatch):
+    import backtester
+
+    # 300 business days; SMA(200) is only ready after bar 200
+    closes = [100 + (i % 40) for i in range(300)]
+    monkeypatch.setattr(backtester, "fetch_ohlcv", lambda *a, **kw: frame(closes))
+    above_sma = StrategyRule(
+        indicator=Indicator.PRICE,
+        operator=Operator.GREATER_THAN,
+        compare_to=Indicator.SMA,
+        compare_period=200,
+        action=Action.BUY,
+    )
+    s = strategy([above_sma, SELL_BELOW_100])
+    s.symbol = "TEST"
+    res = run_backtest(s, period="3mo", fee_bps=0)
+    # only the last ~3 months are simulated, and the SMA is warm from the first bar
+    assert 50 < res.bars < 80
+    assert res.equity_curve[0].value == 100
+    assert res.total_trades > 0
+    assert res.trades[0].entry_date >= res.equity_curve[0].date
+    assert not any("history" in w for w in res.warnings)

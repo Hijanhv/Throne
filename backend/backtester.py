@@ -70,15 +70,41 @@ def clamp_period(period: str, interval: str) -> str:
     return period
 
 
-def fetch_ohlcv(symbol: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
+def fetch_ohlcv(symbol: str, period: str = "1y", interval: str = "1d", warmup_bars: int = 0) -> pd.DataFrame:
+    """OHLCV for `period`, plus `warmup_bars` of extra history before it when the source allows."""
     ticker = to_ticker(symbol)
-    df = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=True)
+    t = yf.Ticker(ticker)
+    if warmup_bars and interval == "1d" and period in _PERIOD_DAYS:
+        # trading days are about 70% of calendar days
+        days = _PERIOD_DAYS[period] + int(warmup_bars * 1.5) + 10
+        start = (pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+        df = t.history(start=start, interval=interval, auto_adjust=True)
+    elif warmup_bars and interval in _MAX_PERIOD:
+        df = t.history(period=_MAX_PERIOD[interval], interval=interval, auto_adjust=True)
+    else:
+        df = t.history(period=period, interval=interval, auto_adjust=True)
     if df is None or df.empty:
         raise DataError(f"No data from yfinance for {ticker} ({period}, {interval})")
     df = df[["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Open", "High", "Low", "Close"])
     if len(df) < 2:
         raise DataError(f"Not enough bars for {ticker}")
     return df
+
+
+def warmup_bars(strategy: ParsedStrategy) -> int:
+    """Bars of history the slowest indicator needs before it produces a stable value."""
+    need = 0
+    for r in strategy.rules:
+        for ind, period in ((r.indicator, r.period), (r.compare_to, r.compare_period)):
+            if ind is None or ind == Indicator.PRICE:
+                continue
+            if ind == Indicator.MACD:
+                need = max(need, 26 + 9)
+            elif ind in (Indicator.RSI, Indicator.EMA):
+                need = max(need, (period or 14) * 3)  # smoothed indicators settle after a few windows
+            else:
+                need = max(need, (period or 20) + 1)
+    return need + 2
 
 
 # ---------------------------------------------------------------------------
@@ -287,9 +313,25 @@ def run_backtest(
     if eff_period != period:
         warnings.append(f"yfinance only serves {interval} bars for the last {eff_period}, period reduced")
 
-    df = data if data is not None else fetch_ohlcv(strategy.symbol, eff_period, interval)
+    warmup = warmup_bars(strategy)
+    if data is not None:
+        df = data
+    else:
+        df = fetch_ohlcv(strategy.symbol, eff_period, interval, warmup_bars=warmup)
     signal, sig_warnings = compute_signals(df, strategy)
     warnings.extend(sig_warnings)
+
+    # indicators were computed on the full history; trade only inside the requested window
+    if data is None and eff_period in _PERIOD_DAYS:
+        cutoff = df.index[-1] - pd.Timedelta(days=_PERIOD_DAYS[eff_period])
+        inside = np.asarray(df.index > cutoff)
+        history = int((~inside).sum())
+        if history < warmup:
+            warnings.append(
+                f"Indicators need {warmup} bars of history but only {history} were available before the window, "
+                "so early signals may be missing"
+            )
+        df, signal = df[inside], signal[inside]
 
     sim = simulate(
         df,

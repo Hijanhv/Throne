@@ -35,7 +35,12 @@ const EXAMPLES: { label: string; text: string; symbol: string }[] = [
   },
 ];
 
-export function StrategyInput({ onParsed }: { onParsed: (s: ParsedStrategy) => void }) {
+interface Props {
+  onParsed: (s: ParsedStrategy) => void;
+  onParsingChange: (parsing: boolean) => void;
+}
+
+export function StrategyInput({ onParsed, onParsingChange }: Props) {
   const [text, setText] = useState("");
   const [symbol, setSymbol] = useState("NIFTY50");
   const [timeframe, setTimeframe] = useState<Timeframe>("1d");
@@ -47,6 +52,7 @@ export function StrategyInput({ onParsed }: { onParsed: (s: ParsedStrategy) => v
       return;
     }
     setLoading(true);
+    onParsingChange(true);
     try {
       const parsed = await api.parse({ text: text.trim(), symbol: symbol.trim() || "NIFTY50", timeframe });
       onParsed(parsed);
@@ -55,6 +61,7 @@ export function StrategyInput({ onParsed }: { onParsed: (s: ParsedStrategy) => v
       toast.error(errorMessage(err));
     } finally {
       setLoading(false);
+      onParsingChange(false);
     }
   }
 

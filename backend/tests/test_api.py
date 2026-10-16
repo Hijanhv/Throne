@@ -12,7 +12,7 @@ def client(monkeypatch, frame):
 
     rng = np.random.default_rng(3)
     closes = list(100 * np.exp(np.cumsum(rng.normal(0, 0.02, 300))))
-    fake = lambda symbol, period, interval: frame(closes)  # noqa: E731
+    fake = lambda symbol, period, interval, **kw: frame(closes)  # noqa: E731
     monkeypatch.setattr(backtester, "fetch_ohlcv", fake)
     monkeypatch.setattr(executor, "fetch_ohlcv", fake)
     monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:9")
@@ -32,7 +32,7 @@ def test_full_flow(client):
     assert s["parser"] == "regex" and len(s["rules"]) == 2 and s["stop_loss_pct"] == 3
 
     bt = client.post("/backtest", json={"strategy_id": s["id"]}).json()
-    assert bt["total_trades"] > 0 and len(bt["equity_curve"]) == 300
+    assert bt["total_trades"] > 0 and 250 <= len(bt["equity_curve"]) < 300  # last year only, rest is warmup
 
     r = client.post("/deploy", json={"strategy_id": s["id"], "mode": "paper", "capital": 50000})
     assert r.status_code == 200 and r.json()["status"] == "deployed"

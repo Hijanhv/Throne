@@ -20,6 +20,7 @@ export default function Home() {
   const [strategy, setStrategy] = useState<ParsedStrategy | null>(null);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [backtesting, setBacktesting] = useState(false);
+  const [parsing, setParsing] = useState(false);
   const [tab, setTab] = useState<Tab>("backtest");
   const [liveId, setLiveId] = useState<string | null>(null);
 
@@ -43,6 +44,7 @@ export default function Home() {
       <TopBar health={health} reachable={reachable} />
       <main className="grid flex-1 grid-cols-1 lg:min-h-0 lg:grid-cols-[minmax(300px,1fr)_minmax(300px,1fr)_minmax(420px,1.5fr)]">
         <StrategyInput
+          onParsingChange={setParsing}
           onParsed={(s) => {
             setStrategy(s);
             setBacktest(null);
@@ -51,6 +53,7 @@ export default function Home() {
         />
         <RuleViewer
           strategy={strategy}
+          parsing={parsing}
           onBacktest={(r) => {
             setBacktest(r);
             setTab("backtest");
